@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 )
 
 func main() {
+	fmt.Println("Starting Peril server")
 	connStr := "amqp://guest:guest@localhost:5672/"
 	conn, err := amqp.Dial(connStr)
 	if err != nil {
@@ -23,6 +25,9 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt)
 
 	rabbitChan, err := conn.Channel()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	message := routing.PlayingState{
 		IsPaused: true,

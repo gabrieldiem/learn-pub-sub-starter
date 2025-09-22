@@ -1,7 +1,45 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+
+	"github.com/gabrieldiem/learn-pub-sub-starter/internal"
+	"github.com/gabrieldiem/learn-pub-sub-starter/internal/gamelogic"
+	"github.com/gabrieldiem/learn-pub-sub-starter/internal/routing"
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+func gameloop(conn *amqp.Connection) {
+	username, err := gamelogic.ClientWelcome()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	exchange := routing.ExchangePerilDirect
+	queueName := fmt.Sprintf("%s.%s", routing.PauseKey, username)
+	routingKey := routing.PauseKey
+	var queueType internal.SimpleQueueType = internal.Transient
+	internal.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
+}
 
 func main() {
 	fmt.Println("Starting Peril client...")
+	connStr := "amqp://guest:guest@localhost:5672/"
+	conn, err := amqp.Dial(connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	log.Println("Connection to RabbitMQ successful")
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+
+	gameloop(conn)
+
+	<-sigChan
+	log.Println("Shutting down...")
 }
