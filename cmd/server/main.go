@@ -68,6 +68,14 @@ func startLoop(rabbitChan *amqp.Channel) bool {
 	return false
 }
 
+func connectExchange(conn *amqp.Connection) (*amqp.Channel, amqp.Queue, error) {
+	exchange := routing.ExchangePerilTopic
+	queueName := routing.GameLogSlug
+	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
+	var queueType internal.SimpleQueueType = internal.Durable
+	return internal.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
+}
+
 func main() {
 	fmt.Println("Starting Peril server")
 	gamelogic.PrintServerHelp()
@@ -86,6 +94,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	connectExchange(conn)
 
 	shouldExit := startLoop(rabbitChan)
 	log.Println("Finished loop")
