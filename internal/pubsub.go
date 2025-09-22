@@ -69,3 +69,48 @@ func DeclareAndBind(
 
 	return rabbitChan, newQ, err
 }
+
+func processDeliveries[T any](deliveryChan <-chan amqp.Delivery, handler func(T)) {
+	for delivery := range deliveryChan {
+		var val T
+		err := json.Unmarshal(delivery.Body, &val)
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		handler(val)
+
+		delivery.Ack(false)
+	}
+}
+
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
+	handler func(T),
+) error {
+	rabbitChan, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	autoGenerateStringConsumerName := ""
+	autoAck := false
+	exclusive := false
+	noLocal := false
+	noWait := false
+	deliveryChan, err := rabbitChan.Consume(queueName, autoGenerateStringConsumerName, autoAck, exclusive, noLocal, noWait, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	go processDeliveries(deliveryChan, handler)
+
+	return nil
+}

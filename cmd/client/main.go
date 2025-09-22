@@ -12,6 +12,14 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.Paused = ps.IsPaused
+		fmt.Println("Game pause toggled from server")
+	}
+}
+
 func connectExchange(conn *amqp.Connection, username string) (*amqp.Channel, amqp.Queue, error) {
 	exchange := routing.ExchangePerilDirect
 	queueName := fmt.Sprintf("%s.%s", routing.PauseKey, username)
@@ -27,13 +35,13 @@ func processInput(rabbitChan *amqp.Channel, input []string, gameState *gamelogic
 	case "spawn":
 		err := gameState.CommandSpawn(input)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 
 	case "move":
 		_, err := gameState.CommandMove(input)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 
 	case "status":
@@ -70,6 +78,8 @@ func gameloop(conn *amqp.Connection) bool {
 	}
 
 	gameState := gamelogic.NewGameState(username)
+	queueName := fmt.Sprintf("pause.%s", username)
+	internal.SubscribeJSON(conn, routing.ExchangePerilDirect, queueName, routing.PauseKey, internal.Transient, handlerPause(gameState))
 
 	var input []string
 	for len(input) == 0 {
