@@ -7,12 +7,70 @@ import (
 	"os/signal"
 
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal"
+	"github.com/gabrieldiem/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func processInput(rabbitChan *amqp.Channel, input []string) bool {
+	for _, action := range input {
+
+		var message routing.PlayingState
+		shouldSend := false
+
+		if action == "pause" {
+			message = routing.PlayingState{
+				IsPaused: true,
+			}
+			shouldSend = true
+			log.Println("Sent Pause message")
+
+		} else if action == "resume" {
+			message = routing.PlayingState{
+				IsPaused: false,
+			}
+			shouldSend = true
+			log.Println("Sent Resume message")
+
+		} else if action == "quit" {
+			log.Println("Exiting")
+			return true
+
+		} else {
+			log.Println("Did not understand")
+		}
+
+		if shouldSend {
+			err := internal.PublishJSON(rabbitChan, routing.ExchangePerilDirect, routing.PauseKey, message)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
+	return false
+}
+
+func startLoop(rabbitChan *amqp.Channel) bool {
+
+	var input []string
+	for len(input) == 0 {
+		input = gamelogic.GetInput()
+
+		if len(input) != 0 {
+			shouldExit := processInput(rabbitChan, input)
+			if shouldExit {
+				return true
+			}
+			input = []string{}
+		}
+	}
+	return false
+}
+
 func main() {
 	fmt.Println("Starting Peril server")
+	gamelogic.PrintServerHelp()
 	connStr := "amqp://guest:guest@localhost:5672/"
 	conn, err := amqp.Dial(connStr)
 	if err != nil {
@@ -29,16 +87,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	message := routing.PlayingState{
-		IsPaused: true,
-	}
+	shouldExit := startLoop(rabbitChan)
+	log.Println("Finished loop")
 
-	err = internal.PublishJSON(rabbitChan, routing.ExchangePerilDirect, routing.PauseKey, message)
-	if err != nil {
-		log.Fatal(err)
+	if shouldExit {
+		log.Println("Exiting via loop exit")
+		return
 	}
-
-	log.Println("Sent PlayingState message")
 
 	<-sigChan
 	log.Println("Shutting down...")
