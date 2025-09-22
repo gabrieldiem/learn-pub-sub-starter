@@ -6,8 +6,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gabrieldiem/learn-pub-sub-starter/internal"
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/gamelogic"
+	"github.com/gabrieldiem/learn-pub-sub-starter/internal/pubsub"
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -24,8 +24,8 @@ func connectExchange(conn *amqp.Connection, username string) (*amqp.Channel, amq
 	exchange := routing.ExchangePerilDirect
 	queueName := fmt.Sprintf("%s.%s", routing.PauseKey, username)
 	routingKey := routing.PauseKey
-	var queueType internal.SimpleQueueType = internal.Transient
-	return internal.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
+	var queueType pubsub.SimpleQueueType = pubsub.Transient
+	return pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
 }
 
 func processInput(rabbitChan *amqp.Channel, input []string, gameState *gamelogic.GameState) bool {
@@ -79,7 +79,7 @@ func gameloop(conn *amqp.Connection) bool {
 
 	gameState := gamelogic.NewGameState(username)
 	queueName := fmt.Sprintf("pause.%s", username)
-	internal.SubscribeJSON(conn, routing.ExchangePerilDirect, queueName, routing.PauseKey, internal.Transient, handlerPause(gameState))
+	pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, queueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
 
 	var input []string
 	for len(input) == 0 {

@@ -6,8 +6,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gabrieldiem/learn-pub-sub-starter/internal"
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/gamelogic"
+	"github.com/gabrieldiem/learn-pub-sub-starter/internal/pubsub"
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -41,7 +41,7 @@ func processInput(rabbitChan *amqp.Channel, input []string) bool {
 		}
 
 		if shouldSend {
-			err := internal.PublishJSON(rabbitChan, routing.ExchangePerilDirect, routing.PauseKey, message)
+			err := pubsub.PublishJSON(rabbitChan, routing.ExchangePerilDirect, routing.PauseKey, message)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -72,8 +72,8 @@ func connectExchange(conn *amqp.Connection) (*amqp.Channel, amqp.Queue, error) {
 	exchange := routing.ExchangePerilTopic
 	queueName := routing.GameLogSlug
 	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
-	var queueType internal.SimpleQueueType = internal.Durable
-	return internal.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
+	var queueType pubsub.SimpleQueueType = pubsub.Durable
+	return pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
 }
 
 func main() {
