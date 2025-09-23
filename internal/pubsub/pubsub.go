@@ -65,7 +65,10 @@ func DeclareAndBind(
 		autoDelete = true
 	}
 
-	newQ, err := rabbitChan.QueueDeclare(queueName, durableProp, autoDelete, exclusive, noWait, nil)
+	table := amqp.Table{}
+	table["x-dead-letter-exchange"] = "peril_dlx"
+
+	newQ, err := rabbitChan.QueueDeclare(queueName, durableProp, autoDelete, exclusive, noWait, table)
 	if err != nil {
 		log.Fatal(err)
 	}
