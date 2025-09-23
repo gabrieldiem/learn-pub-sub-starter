@@ -20,7 +20,14 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
 	}
 }
 
-func connectExchange(conn *amqp.Connection, username string) (*amqp.Channel, amqp.Queue, error) {
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gs.HandleMove(move)
+	}
+}
+
+func connectToPauseQueue(conn *amqp.Connection, username string) (*amqp.Channel, amqp.Queue, error) {
 	exchange := routing.ExchangePerilDirect
 	queueName := fmt.Sprintf("%s.%s", routing.PauseKey, username)
 	routingKey := routing.PauseKey
@@ -28,7 +35,15 @@ func connectExchange(conn *amqp.Connection, username string) (*amqp.Channel, amq
 	return pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
 }
 
-func processInput(rabbitChan *amqp.Channel, input []string, gameState *gamelogic.GameState) bool {
+func connectToMovesQueue(conn *amqp.Connection, username string) (*amqp.Channel, amqp.Queue, error) {
+	exchange := routing.ExchangePerilTopic
+	queueName := fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username)
+	routingKey := fmt.Sprintf("%s.*", routing.ArmyMovesPrefix)
+	var queueType pubsub.SimpleQueueType = pubsub.Transient
+	return pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
+}
+
+func processInput(pauseChannel *amqp.Channel, movesChannel *amqp.Channel, input []string, gameState *gamelogic.GameState, username string) bool {
 	action := input[0]
 
 	switch action {
@@ -39,10 +54,11 @@ func processInput(rabbitChan *amqp.Channel, input []string, gameState *gamelogic
 		}
 
 	case "move":
-		_, err := gameState.CommandMove(input)
+		move, err := gameState.CommandMove(input)
 		if err != nil {
 			log.Println(err)
 		}
+		pubsub.PublishJSON(movesChannel, routing.ExchangePerilTopic, fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username), move)
 
 	case "status":
 		gameState.CommandStatus()
@@ -71,7 +87,13 @@ func gameloop(conn *amqp.Connection) bool {
 		return true
 	}
 
-	rabbitChan, _, err := connectExchange(conn, username)
+	pauseChannel, _, err := connectToPauseQueue(conn, username)
+	if err != nil {
+		log.Fatal(err)
+		return true
+	}
+
+	movesChannel, _, err := connectToMovesQueue(conn, username)
 	if err != nil {
 		log.Fatal(err)
 		return true
@@ -81,12 +103,16 @@ func gameloop(conn *amqp.Connection) bool {
 	queueName := fmt.Sprintf("pause.%s", username)
 	pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, queueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
 
+	queueName = fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username)
+	routingKey := fmt.Sprintf("%s.*", routing.ArmyMovesPrefix)
+	pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, queueName, routingKey, pubsub.Transient, handlerMove(gameState))
+
 	var input []string
 	for len(input) == 0 {
 		input = gamelogic.GetInput()
 
 		if len(input) != 0 {
-			shouldExit := processInput(rabbitChan, input, gameState)
+			shouldExit := processInput(pauseChannel, movesChannel, input, gameState, username)
 			if shouldExit {
 				return true
 			}
