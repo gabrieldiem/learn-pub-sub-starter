@@ -33,6 +33,14 @@ const (
 	Transient
 )
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func DeclareAndBind(
 	conn *amqp.Connection,
 	exchange,
@@ -70,7 +78,7 @@ func DeclareAndBind(
 	return rabbitChan, newQ, err
 }
 
-func processDeliveries[T any](deliveryChan <-chan amqp.Delivery, handler func(T)) {
+func processDeliveries[T any](deliveryChan <-chan amqp.Delivery, handler func(T) AckType) {
 	for delivery := range deliveryChan {
 		var val T
 		err := json.Unmarshal(delivery.Body, &val)
@@ -79,9 +87,22 @@ func processDeliveries[T any](deliveryChan <-chan amqp.Delivery, handler func(T)
 			continue
 		}
 
-		handler(val)
+		acktype := handler(val)
 
-		delivery.Ack(false)
+		switch acktype {
+		case Ack:
+			delivery.Ack(false)
+			log.Println("Acked delivery")
+
+		case NackRequeue:
+			delivery.Nack(false, true)
+			log.Println("Nacked delivery and asked to requeue")
+
+		case NackDiscard:
+			delivery.Nack(false, false)
+			log.Println("Nacked delivery and asked to discard")
+
+		}
 	}
 }
 
@@ -91,7 +112,7 @@ func SubscribeJSON[T any](
 	queueName,
 	key string,
 	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
-	handler func(T),
+	handler func(T) AckType,
 ) error {
 	rabbitChan, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
