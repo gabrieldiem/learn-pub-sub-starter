@@ -72,7 +72,7 @@ func connectExchange(conn *amqp.Connection) (*amqp.Channel, amqp.Queue, error) {
 	exchange := routing.ExchangePerilTopic
 	queueName := routing.GameLogSlug
 	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
-	var queueType pubsub.SimpleQueueType = pubsub.Durable
+	var queueType pubsub.SimpleQueueType = pubsub.SimpleQueueDurable
 	return pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
 }
 
