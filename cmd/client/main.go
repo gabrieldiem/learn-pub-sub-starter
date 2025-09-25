@@ -72,7 +72,7 @@ func handlerWar(gs *gamelogic.GameState) func(dw gamelogic.RecognitionOfWar) pub
 	}
 }
 
-func main() {
+func setupConnection() (*amqp.Connection, *amqp.Channel) {
 	fmt.Println("Starting Peril client...")
 	const rabbitConnString = "amqp://guest:guest@localhost:5672/"
 
@@ -80,7 +80,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
-	defer conn.Close()
 	fmt.Println("Peril game client connected to RabbitMQ!")
 
 	publishCh, err := conn.Channel()
@@ -88,13 +87,11 @@ func main() {
 		log.Fatalf("could not create channel: %v", err)
 	}
 
-	username, err := gamelogic.ClientWelcome()
-	if err != nil {
-		log.Fatalf("could not get username: %v", err)
-	}
-	gs := gamelogic.NewGameState(username)
+	return conn, publishCh
+}
 
-	err = pubsub.SubscribeJSON(
+func setupSubscriptions(conn *amqp.Connection, gs *gamelogic.GameState, publishCh *amqp.Channel) {
+	err := pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilTopic,
 		routing.ArmyMovesPrefix+"."+gs.GetUsername(),
@@ -127,7 +124,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not subscribe to pause: %v", err)
 	}
+}
 
+func runCommandLoop(gs *gamelogic.GameState, publishCh *amqp.Channel) {
 	for {
 		words := gamelogic.GetInput()
 		if len(words) == 0 {
@@ -153,7 +152,7 @@ func main() {
 			}
 			fmt.Printf("Moved %v units to %s\n", len(mv.Units), mv.ToLocation)
 		case "spawn":
-			err = gs.CommandSpawn(words)
+			err := gs.CommandSpawn(words)
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -172,4 +171,19 @@ func main() {
 			fmt.Println("unknown command")
 		}
 	}
+}
+
+func main() {
+	conn, publishCh := setupConnection()
+	defer conn.Close()
+
+	username, err := gamelogic.ClientWelcome()
+	if err != nil {
+		log.Fatalf("could not get username: %v", err)
+	}
+	gs := gamelogic.NewGameState(username)
+
+	setupSubscriptions(conn, gs, publishCh)
+
+	runCommandLoop(gs, publishCh)
 }
