@@ -58,12 +58,13 @@ func publishGameLog(logMessage, attackerUsername string, publishCh *amqp.Channel
 		Username:    attackerUsername,
 	}
 
-	return pubsub.PublishGob(
+	pubsub.PublishGob(
 		publishCh,
 		routing.ExchangePerilTopic,
 		routing.GameLogSlug+"."+attackerUsername,
 		gameLog,
 	)
+	return nil
 }
 
 func handlerWar(gs *gamelogic.GameState, publishCh *amqp.Channel) func(dw gamelogic.RecognitionOfWar) pubsub.Acktype {

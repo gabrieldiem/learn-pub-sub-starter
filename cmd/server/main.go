@@ -68,12 +68,25 @@ func startLoop(rabbitChan *amqp.Channel) bool {
 	return false
 }
 
-func connectExchange(conn *amqp.Connection) (*amqp.Channel, amqp.Queue, error) {
+func connectExchange(conn *amqp.Connection) error {
 	exchange := routing.ExchangePerilTopic
 	queueName := routing.GameLogSlug
 	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
 	var queueType pubsub.SimpleQueueType = pubsub.SimpleQueueDurable
-	return pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, queueType)
+	return pubsub.SubscribeGob(conn, exchange, queueName, routingKey, queueType, handlerLog())
+}
+
+func handlerLog() func(gamelog routing.GameLog) pubsub.Acktype {
+	return func(gamelog routing.GameLog) pubsub.Acktype {
+		defer fmt.Print("> ")
+
+		err := gamelogic.WriteLog(gamelog)
+		if err != nil {
+			fmt.Printf("error writing log: %v\n", err)
+			return pubsub.NackRequeue
+		}
+		return pubsub.Ack
+	}
 }
 
 func main() {
