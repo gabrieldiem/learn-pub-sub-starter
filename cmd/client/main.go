@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/gabrieldiem/learn-pub-sub-starter/internal/pubsub"
@@ -50,20 +51,53 @@ func handlerMove(gs *gamelogic.GameState, publishCh *amqp.Channel) func(gamelogi
 	}
 }
 
-func handlerWar(gs *gamelogic.GameState) func(dw gamelogic.RecognitionOfWar) pubsub.Acktype {
+func publishGameLog(logMessage, attackerUsername string, publishCh *amqp.Channel) error {
+	gameLog := routing.GameLog{
+		CurrentTime: time.Now(),
+		Message:     logMessage,
+		Username:    attackerUsername,
+	}
+
+	return pubsub.PublishGob(
+		publishCh,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug+"."+attackerUsername,
+		gameLog,
+	)
+}
+
+func handlerWar(gs *gamelogic.GameState, publishCh *amqp.Channel) func(dw gamelogic.RecognitionOfWar) pubsub.Acktype {
 	return func(dw gamelogic.RecognitionOfWar) pubsub.Acktype {
 		defer fmt.Print("> ")
-		warOutcome, _, _ := gs.HandleWar(dw)
+		warOutcome, winner, loser := gs.HandleWar(dw)
+		var message string
+		attackerUsername := dw.Attacker.Username
+
 		switch warOutcome {
 		case gamelogic.WarOutcomeNotInvolved:
 			return pubsub.NackRequeue
 		case gamelogic.WarOutcomeNoUnits:
 			return pubsub.NackDiscard
 		case gamelogic.WarOutcomeOpponentWon:
+			message = fmt.Sprintf("%s won a war against %s", winner, loser)
+			err := publishGameLog(message, attackerUsername, publishCh)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		case gamelogic.WarOutcomeYouWon:
+			message = fmt.Sprintf("%s won a war against %s", winner, loser)
+			err := publishGameLog(message, attackerUsername, publishCh)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		case gamelogic.WarOutcomeDraw:
+			message = fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)
+			err := publishGameLog(message, attackerUsername, publishCh)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		}
 
@@ -108,7 +142,7 @@ func setupSubscriptions(conn *amqp.Connection, gs *gamelogic.GameState, publishC
 		routing.WarRecognitionsPrefix,
 		routing.WarRecognitionsPrefix+".*",
 		pubsub.SimpleQueueTransient,
-		handlerWar(gs),
+		handlerWar(gs, publishCh),
 	)
 	// if err != nil {
 	// 	log.Fatalf("could not subscribe to war declarations: %v", err)
